@@ -4,7 +4,7 @@
   <img src="https://avatars.githubusercontent.com/u/179055349?v=4" alt="Logo" width="120">
   <br><br>
   
-  <a href="LINK_DO_SEU_SCRIPT_RAW">
+  <a href="https://raw.githubusercontent.com/joaoAGS/Copiar-Dados-ONU---JoaoAGS/main/Copiar%20Dados%20ONU%20-%20JoaoAGS.user.js">
     <img src="https://img.shields.io/badge/⬇️_Instalar_Script-v1.0-success?style=for-the-badge&logo=tampermonkey" alt="Instalar Script">
   </a>
   

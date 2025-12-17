@@ -12,8 +12,8 @@
 // @grant        GM_setClipboard
 // ==/UserScript==
 // --- ESTRATÉGIA DE ATUALIZAÇÃO ---
-// @updateURL    https://raw.githubusercontent.com/joaoAGS/Copiar-Dados-ONU---JoaoAGS/refs/heads/main/Copiar%20Dados%20ONU%20-%20JoaoAGS
-// @downloadURL  https://raw.githubusercontent.com/joaoAGS/Copiar-Dados-ONU---JoaoAGS/refs/heads/main/Copiar%20Dados%20ONU%20-%20JoaoAGS
+// @updateURL    https://raw.githubusercontent.com/joaoAGS/Copiar-Dados-ONU---JoaoAGS/main/Copiar%20Dados%20ONU%20-%20JoaoAGS.user.js
+// @downloadURL  https://raw.githubusercontent.com/joaoAGS/Copiar-Dados-ONU---JoaoAGS/main/Copiar%20Dados%20ONU%20-%20JoaoAGS.user.js
 // 
 // ==/UserScript==
 
