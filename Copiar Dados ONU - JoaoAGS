@@ -1,14 +1,20 @@
 // ==UserScript==
-// @name         A1 Copiar dados ONU - Luiz Toledo (V17 - Turbo Fix)
+// @name         Copiar Dados ONU - JoaoAGS
 // @namespace    http://tampermonkey.net/
-// @version      17.0
-// @description  Correção de navegação (evita telas erradas) + Velocidade Máxima
-// @author       Luiz 
+// @version      1.0
+// @description  Copia os dados da ONU, e faz teste de ONU LOSS
+// @author       Joao Augusto 
+// @icon         https://avatars.githubusercontent.com/u/179055349?v=4
 // @match        https://autoisp.gegnet.com.br/contracted_services/*
 // @match        https://autoisp.gegnet.com.br/gpon_clients/*
 // @match        https://autoisp.acessoline.net.br/contracted_services/*
 // @match        https://autoisp.acessoline.net.br/gpon_clients/*
 // @grant        GM_setClipboard
+// ==/UserScript==
+// --- ESTRATÉGIA DE ATUALIZAÇÃO ---
+// @updateURL    
+// @downloadURL  
+// 
 // ==/UserScript==
 
 (function () {
