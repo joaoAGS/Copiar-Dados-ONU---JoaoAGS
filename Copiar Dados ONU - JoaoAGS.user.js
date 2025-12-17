@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Copiar Dados ONU - JoaoAGS
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @description  Copia os dados da ONU, e faz teste de ONU LOSS
-// @author       Joao Augusto 
+// @version      1.2
+// @description  Copia os dados da ONU, e faz teste de ONU LOSS (Com Serial)
+// @author       Joao Augusto
 // @icon         https://avatars.githubusercontent.com/u/179055349?v=4
 // @match        https://autoisp.gegnet.com.br/contracted_services/*
 // @match        https://autoisp.gegnet.com.br/gpon_clients/*
@@ -14,7 +14,7 @@
 // --- ESTRATÉGIA DE ATUALIZAÇÃO ---
 // @updateURL    https://raw.githubusercontent.com/joaoAGS/Copiar-Dados-ONU---JoaoAGS/main/Copiar%20Dados%20ONU%20-%20JoaoAGS.user.js
 // @downloadURL  https://raw.githubusercontent.com/joaoAGS/Copiar-Dados-ONU---JoaoAGS/main/Copiar%20Dados%20ONU%20-%20JoaoAGS.user.js
-// 
+//
 // ==/UserScript==
 
 (function () {
@@ -48,13 +48,23 @@
     // --- NAVEGAÇÃO SEGURA ---
     function trocarAba(nomeAba) {
         const todosLinks = Array.from(document.querySelectorAll('a'));
+
+        // Filtro 1: Tenta achar links que pareçam abas
         let linkAlvo = todosLinks.find(a => {
             const texto = clean(a.textContent);
             const ehAba = a.classList.contains('nav-link') || a.closest('ul.nav') || a.closest('.tabs');
             return ehAba && texto === nomeAba;
         });
-        if (!linkAlvo) linkAlvo = todosLinks.find(a => clean(a.textContent) === nomeAba);
-        if (!linkAlvo) linkAlvo = todosLinks.find(a => clean(a.textContent).includes(nomeAba));
+
+        // Filtro 2: Nome exato
+        if (!linkAlvo) {
+            linkAlvo = todosLinks.find(a => clean(a.textContent) === nomeAba);
+        }
+
+        // Filtro 3: Contém nome
+        if (!linkAlvo) {
+            linkAlvo = todosLinks.find(a => clean(a.textContent).includes(nomeAba));
+        }
 
         if (linkAlvo) {
             linkAlvo.click();
@@ -66,6 +76,7 @@
     // --- LEITURA RÁPIDA DA TABELA ---
     function lerTabelaHistorico() {
         const tables = document.getElementsByTagName('table');
+
         for (let i = 0; i < tables.length; i++) {
             const tbl = tables[i];
             if (!tbl.innerText.toLowerCase().includes('onu rx anterior')) continue;
@@ -74,6 +85,7 @@
             const idxData = headers.findIndex(h => h.includes('data'));
             const idxRxAnt = headers.findIndex(h => h.includes('anterior'));
             const idxRx = headers.findIndex(h => h === 'onu rx' || h === 'rx');
+
             const rows = tbl.querySelectorAll('tbody tr');
             if (rows.length === 0) continue;
 
@@ -109,11 +121,13 @@
         const intervalo = setInterval(() => {
             tentativas++;
             dados = lerTabelaHistorico();
+
             if (dados) {
                 clearInterval(intervalo);
                 trocarAba('Geral');
                 callback(dados);
-            } else if (tentativas > 60) {
+            }
+            else if (tentativas > 60) {
                 clearInterval(intervalo);
                 trocarAba('Geral');
                 callback(null);
@@ -143,11 +157,11 @@
         return '';
     }
 
-    // --- FUNÇÃO ESPECÍFICA PARA SERIAL ---
+    // --- FUNÇÃO PARA PEGAR SERIAL LIMPO ---
     function pegarSerialLimpo() {
         // Tenta pegar pelo label padrão
         let serial = buscarDadoPorLabel(['Serial', 'Serial:', 'Serial Number', 'ID do Fabricante']);
-        
+
         // Se não achou, tenta pegar pelo estilo visual (comum no card principal)
         if (!serial) {
             const el = document.querySelector('.w-100.text-end[style*="14pt"]');
@@ -159,7 +173,7 @@
             const partes = serial.split('->');
             serial = partes[partes.length - 1].trim(); // Pega o último pedaço
         }
-        
+
         return serial || 'Não identificado';
     }
 
@@ -171,7 +185,10 @@
         const servicePort = buscarDadoPorLabel(['Service Port']);
         const vlan = buscarDadoPorLabel(['VLAN (do perfil)', 'VLAN:']);
         const modelo = buscarDadoPorLabel(['Modelo de ONU', 'Modelo:']);
-        
+
+        // Pega o serial usando a função de limpeza
+        const serial = pegarSerialLimpo();
+
         const ultimoSinal = (dadosExtra && dadosExtra.sinal) ? dadosExtra.sinal : '–';
         const dataQueda = (dadosExtra && dadosExtra.data) ? dadosExtra.data : '–';
 
@@ -184,6 +201,7 @@
             `Service Port: ${servicePort}`,
             `VLAN: ${vlan}`,
             `Modelo da ONU: ${modelo || 'Não identificado'}`,
+            `Serial: ${serial}`,  // <--- CAMPO ADICIONADO AQUI
             `Plano desconectado desde: ${dataQueda}`,
             `Último sinal ONU: ${ultimoSinal}`,
             'Demais clientes da caixa estão UP',
@@ -227,10 +245,9 @@
             const servicePort = buscarDadoPorLabel(['Service Port']);
             const vlan = buscarDadoPorLabel(['VLAN (do perfil)', 'VLAN:']);
             const modelo = buscarDadoPorLabel(['Modelo de ONU', 'Modelo:']);
-            
-            // Serial Corrigido
-            const serial = pegarSerialLimpo();
-            
+
+            const serial = pegarSerialLimpo(); // Usa função limpa
+
             let firmware = buscarDadoPorLabel(['Firmware da ONU', 'Firmware:']).replace(/(valid|invalid).*?committed/gi,'').trim();
             const rxOltAtual = buscarDadoPorLabel(['Atenuação Rx OLT', 'Sinal OLT']);
             const uptime = buscarDadoPorLabel(['Uptime da ONU', 'Uptime:']);
@@ -250,7 +267,7 @@
                 `Uptime: ${uptime}`
             ];
             if (isLoss) linhas.push(`Alarmes: ${alarmes || 'Sem info'}`);
-            
+
             GM_setClipboard(linhas.join('\n'));
             const orig = btn.innerHTML;
             btn.innerHTML = 'Copiado!';
