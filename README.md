@@ -17,7 +17,7 @@
 ## ⚡ Instalação Rápida (1 Clique)
 
 1. Certifique-se de ter a extensão **Tampermonkey** instalada no navegador.
-2. **[CLIQUE AQUI PARA INSTALAR O SCRIPT](LINK_DO_SEU_SCRIPT_RAW)**
+2. **[CLIQUE AQUI PARA INSTALAR O SCRIPT](https://raw.githubusercontent.com/joaoAGS/Copiar-Dados-ONU---JoaoAGS/main/Copiar%20Dados%20ONU%20-%20JoaoAGS.user.js)**
 3. Uma janela do Tampermonkey abrirá. Clique em **"Instalar"**.
 4. Recarregue a página do AutoISP (F5).
 
