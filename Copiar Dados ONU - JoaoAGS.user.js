@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Copiar Dados ONU - JoaoAGS
 // @namespace    http://tampermonkey.net/
-// @version      1.2
-// @description  Copia os dados da ONU, e faz teste de ONU LOSS (Com Serial)
+// @version      1.3
+// @description  Copia os dados da ONU, e faz teste de ONU LOSS (Serial Fix v2)
 // @author       Joao Augusto
 // @icon         https://avatars.githubusercontent.com/u/179055349?v=4
 // @match        https://autoisp.gegnet.com.br/contracted_services/*
@@ -49,22 +49,14 @@
     function trocarAba(nomeAba) {
         const todosLinks = Array.from(document.querySelectorAll('a'));
 
-        // Filtro 1: Tenta achar links que pareçam abas
         let linkAlvo = todosLinks.find(a => {
             const texto = clean(a.textContent);
             const ehAba = a.classList.contains('nav-link') || a.closest('ul.nav') || a.closest('.tabs');
             return ehAba && texto === nomeAba;
         });
 
-        // Filtro 2: Nome exato
-        if (!linkAlvo) {
-            linkAlvo = todosLinks.find(a => clean(a.textContent) === nomeAba);
-        }
-
-        // Filtro 3: Contém nome
-        if (!linkAlvo) {
-            linkAlvo = todosLinks.find(a => clean(a.textContent).includes(nomeAba));
-        }
+        if (!linkAlvo) linkAlvo = todosLinks.find(a => clean(a.textContent) === nomeAba);
+        if (!linkAlvo) linkAlvo = todosLinks.find(a => clean(a.textContent).includes(nomeAba));
 
         if (linkAlvo) {
             linkAlvo.click();
@@ -157,24 +149,27 @@
         return '';
     }
 
-    // --- FUNÇÃO PARA PEGAR SERIAL LIMPO ---
+    // --- CORREÇÃO DE SERIAL (V1.3) ---
     function pegarSerialLimpo() {
-        // Tenta pegar pelo label padrão
         let serial = buscarDadoPorLabel(['Serial', 'Serial:', 'Serial Number', 'ID do Fabricante']);
 
-        // Se não achou, tenta pegar pelo estilo visual (comum no card principal)
         if (!serial) {
             const el = document.querySelector('.w-100.text-end[style*="14pt"]');
             if (el) serial = el.textContent.trim();
         }
 
-        // LIMPEZA: Remove "N/A -> " ou pega só a parte final se tiver seta
-        if (serial && serial.includes('->')) {
-            const partes = serial.split('->');
-            serial = partes[partes.length - 1].trim(); // Pega o último pedaço
+        if (!serial) return 'Não identificado';
+
+        // 1. Se tiver a seta "->", pega só o que vem DEPOIS dela
+        if (serial.includes('->')) {
+            // Divide e pega o último pedaço (o serial novo)
+            serial = serial.split('->').pop();
         }
 
-        return serial || 'Não identificado';
+        // 2. Remove a palavra "N/A" se ela sobrou solta e limpa espaços
+        serial = serial.replace(/N\/A/gi, '').trim();
+
+        return serial;
     }
 
     function gerarRelatorio(dadosExtra) {
@@ -185,9 +180,7 @@
         const servicePort = buscarDadoPorLabel(['Service Port']);
         const vlan = buscarDadoPorLabel(['VLAN (do perfil)', 'VLAN:']);
         const modelo = buscarDadoPorLabel(['Modelo de ONU', 'Modelo:']);
-
-        // Pega o serial usando a função de limpeza
-        const serial = pegarSerialLimpo();
+        const serial = pegarSerialLimpo(); // <--- Serial Corrigido
 
         const ultimoSinal = (dadosExtra && dadosExtra.sinal) ? dadosExtra.sinal : '–';
         const dataQueda = (dadosExtra && dadosExtra.data) ? dadosExtra.data : '–';
@@ -201,7 +194,7 @@
             `Service Port: ${servicePort}`,
             `VLAN: ${vlan}`,
             `Modelo da ONU: ${modelo || 'Não identificado'}`,
-            `Serial: ${serial}`,  // <--- CAMPO ADICIONADO AQUI
+            `Serial: ${serial}`,
             `Plano desconectado desde: ${dataQueda}`,
             `Último sinal ONU: ${ultimoSinal}`,
             'Demais clientes da caixa estão UP',
@@ -245,8 +238,8 @@
             const servicePort = buscarDadoPorLabel(['Service Port']);
             const vlan = buscarDadoPorLabel(['VLAN (do perfil)', 'VLAN:']);
             const modelo = buscarDadoPorLabel(['Modelo de ONU', 'Modelo:']);
-
-            const serial = pegarSerialLimpo(); // Usa função limpa
+            
+            const serial = pegarSerialLimpo(); // <--- Serial Corrigido
 
             let firmware = buscarDadoPorLabel(['Firmware da ONU', 'Firmware:']).replace(/(valid|invalid).*?committed/gi,'').trim();
             const rxOltAtual = buscarDadoPorLabel(['Atenuação Rx OLT', 'Sinal OLT']);
@@ -267,7 +260,7 @@
                 `Uptime: ${uptime}`
             ];
             if (isLoss) linhas.push(`Alarmes: ${alarmes || 'Sem info'}`);
-
+            
             GM_setClipboard(linhas.join('\n'));
             const orig = btn.innerHTML;
             btn.innerHTML = 'Copiado!';
