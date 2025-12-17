@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Copiar Dados ONU - JoaoAGS
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Copia os dados da ONU, e faz teste de ONU LOSS
 // @author       Joao Augusto 
 // @icon         https://avatars.githubusercontent.com/u/179055349?v=4
@@ -45,30 +45,16 @@
         return clean(clone.textContent);
     }
 
-    // --- NAVEGAÇÃO SEGURA (CORREÇÃO DA TELA ERRADA) ---
+    // --- NAVEGAÇÃO SEGURA ---
     function trocarAba(nomeAba) {
-        // Busca links apenas dentro de áreas de navegação comuns (abas)
-        // Geralmente abas ficam em <ul> com classes como 'nav', 'tabs', etc.
-        // Se não achar, busca em qualquer lugar mas exige correspondência exata.
-
         const todosLinks = Array.from(document.querySelectorAll('a'));
-
-        // Filtro 1: Tenta achar links que pareçam abas (dentro de LI ou com classe nav-link)
         let linkAlvo = todosLinks.find(a => {
             const texto = clean(a.textContent);
             const ehAba = a.classList.contains('nav-link') || a.closest('ul.nav') || a.closest('.tabs');
-            return ehAba && texto === nomeAba; // Nome EXATO
+            return ehAba && texto === nomeAba;
         });
-
-        // Filtro 2: Se não achou, tenta qualquer link com nome EXATO
-        if (!linkAlvo) {
-            linkAlvo = todosLinks.find(a => clean(a.textContent) === nomeAba);
-        }
-
-        // Filtro 3: Última tentativa, contém o nome (mas evita menus laterais se possível)
-        if (!linkAlvo) {
-            linkAlvo = todosLinks.find(a => clean(a.textContent).includes(nomeAba));
-        }
+        if (!linkAlvo) linkAlvo = todosLinks.find(a => clean(a.textContent) === nomeAba);
+        if (!linkAlvo) linkAlvo = todosLinks.find(a => clean(a.textContent).includes(nomeAba));
 
         if (linkAlvo) {
             linkAlvo.click();
@@ -79,9 +65,7 @@
 
     // --- LEITURA RÁPIDA DA TABELA ---
     function lerTabelaHistorico() {
-        // Otimização: Pega apenas tabelas visíveis ou relevantes
         const tables = document.getElementsByTagName('table');
-
         for (let i = 0; i < tables.length; i++) {
             const tbl = tables[i];
             if (!tbl.innerText.toLowerCase().includes('onu rx anterior')) continue;
@@ -90,23 +74,17 @@
             const idxData = headers.findIndex(h => h.includes('data'));
             const idxRxAnt = headers.findIndex(h => h.includes('anterior'));
             const idxRx = headers.findIndex(h => h === 'onu rx' || h === 'rx');
-
             const rows = tbl.querySelectorAll('tbody tr');
             if (rows.length === 0) continue;
 
-            // Pega data da primeira linha como backup
             let dataRecente = (idxData >= 0) ? obterTexto(rows[0].cells[idxData]) : '–';
 
-            // Scanner de linha
             for (const row of rows) {
                 const cells = row.cells;
-
-                // Checa Anterior
                 if (idxRxAnt >= 0 && cells[idxRxAnt]) {
                     const s = validarSinal(obterTexto(cells[idxRxAnt]));
                     if (s) return { sinal: s, data: (idxData >= 0 ? obterTexto(cells[idxData]) : dataRecente) };
                 }
-                // Checa Atual
                 if (idxRx >= 0 && cells[idxRx]) {
                     const s = validarSinal(obterTexto(cells[idxRx]));
                     if (s) return { sinal: s, data: (idxData >= 0 ? obterTexto(cells[idxData]) : dataRecente) };
@@ -118,34 +96,29 @@
 
     // --- PROCESSADOR TURBO ---
     function iniciarBuscaTurbo(callback) {
-        // 1. Verifica se já está na tela
         let dados = lerTabelaHistorico();
         if (dados) { callback(dados); return; }
 
-        // 2. Troca de aba
         if (!trocarAba('Diagnóstico GPON')) {
             alert('Erro: Aba Diagnóstico GPON não encontrada.');
             callback(null);
             return;
         }
 
-        // 3. Loop Rápido (50ms)
         let tentativas = 0;
         const intervalo = setInterval(() => {
             tentativas++;
             dados = lerTabelaHistorico();
-
             if (dados) {
                 clearInterval(intervalo);
-                trocarAba('Geral'); // Volta imediatamente
+                trocarAba('Geral');
                 callback(dados);
-            }
-            else if (tentativas > 60) { // 3 segundos max (ficou mais curto pra ser rapido)
+            } else if (tentativas > 60) {
                 clearInterval(intervalo);
                 trocarAba('Geral');
                 callback(null);
             }
-        }, 50); // Velocidade aumentada
+        }, 50);
     }
 
     function buscarDadoPorLabel(labels) {
@@ -170,6 +143,26 @@
         return '';
     }
 
+    // --- FUNÇÃO ESPECÍFICA PARA SERIAL ---
+    function pegarSerialLimpo() {
+        // Tenta pegar pelo label padrão
+        let serial = buscarDadoPorLabel(['Serial', 'Serial:', 'Serial Number', 'ID do Fabricante']);
+        
+        // Se não achou, tenta pegar pelo estilo visual (comum no card principal)
+        if (!serial) {
+            const el = document.querySelector('.w-100.text-end[style*="14pt"]');
+            if (el) serial = el.textContent.trim();
+        }
+
+        // LIMPEZA: Remove "N/A -> " ou pega só a parte final se tiver seta
+        if (serial && serial.includes('->')) {
+            const partes = serial.split('->');
+            serial = partes[partes.length - 1].trim(); // Pega o último pedaço
+        }
+        
+        return serial || 'Não identificado';
+    }
+
     function gerarRelatorio(dadosExtra) {
         const descOLT = buscarDadoPorLabel(['Descrição na OLT', 'Local:']);
         const olt = buscarDadoPorLabel(['OLT', 'OLT:']);
@@ -178,7 +171,7 @@
         const servicePort = buscarDadoPorLabel(['Service Port']);
         const vlan = buscarDadoPorLabel(['VLAN (do perfil)', 'VLAN:']);
         const modelo = buscarDadoPorLabel(['Modelo de ONU', 'Modelo:']);
-
+        
         const ultimoSinal = (dadosExtra && dadosExtra.sinal) ? dadosExtra.sinal : '–';
         const dataQueda = (dadosExtra && dadosExtra.data) ? dadosExtra.data : '–';
 
@@ -234,7 +227,10 @@
             const servicePort = buscarDadoPorLabel(['Service Port']);
             const vlan = buscarDadoPorLabel(['VLAN (do perfil)', 'VLAN:']);
             const modelo = buscarDadoPorLabel(['Modelo de ONU', 'Modelo:']);
-            const serial = buscarDadoPorLabel(['Serial', 'Serial:']) || document.querySelector('.w-100.text-end[style*="14pt"]')?.textContent.trim() || '';
+            
+            // Serial Corrigido
+            const serial = pegarSerialLimpo();
+            
             let firmware = buscarDadoPorLabel(['Firmware da ONU', 'Firmware:']).replace(/(valid|invalid).*?committed/gi,'').trim();
             const rxOltAtual = buscarDadoPorLabel(['Atenuação Rx OLT', 'Sinal OLT']);
             const uptime = buscarDadoPorLabel(['Uptime da ONU', 'Uptime:']);
@@ -254,7 +250,7 @@
                 `Uptime: ${uptime}`
             ];
             if (isLoss) linhas.push(`Alarmes: ${alarmes || 'Sem info'}`);
-
+            
             GM_setClipboard(linhas.join('\n'));
             const orig = btn.innerHTML;
             btn.innerHTML = 'Copiado!';
@@ -264,7 +260,7 @@
         if (isLoss) {
             criarBotao('btn-onu-down', '🚨 Teste ONU LOSS', 'danger', (btn) => {
                 const orig = btn.innerHTML;
-                btn.innerHTML = '⚡'; // Texto curto pra não quebrar layout
+                btn.innerHTML = '⚡';
                 btn.disabled = true;
 
                 iniciarBuscaTurbo((dados) => {
