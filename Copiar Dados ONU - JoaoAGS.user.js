@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Copiar Dados ONU - JoaoAGS
 // @namespace    http://tampermonkey.net/
-// @version      1.3
-// @description  Copia os dados da ONU, e faz teste de ONU LOSS (Serial Fix v2)
+// @version      1.4
+// @description  Copia os dados da ONU, e faz teste de ONU LOSS (Serial Topo Fix)
 // @author       Joao Augusto
 // @icon         https://avatars.githubusercontent.com/u/179055349?v=4
 // @match        https://autoisp.gegnet.com.br/contracted_services/*
@@ -149,24 +149,33 @@
         return '';
     }
 
-    // --- CORREÇÃO DE SERIAL (V1.3) ---
+    // --- FUNÇÃO DE SERIAL (V1.4 - PRIORIDADE VISUAL) ---
     function pegarSerialLimpo() {
-        let serial = buscarDadoPorLabel(['Serial', 'Serial:', 'Serial Number', 'ID do Fabricante']);
+        // ESTRATÉGIA 1: BUSCA VISUAL (O Serial grande no canto direito)
+        // Procura aquele texto destacado no canto do card, que geralmente é o serial limpo
+        // Seletor busca elementos com classe text-end (Bootstrap) que tenham cara de serial
+        const elementosVisuais = Array.from(document.querySelectorAll('.text-end, .text-right, [style*="text-align: right"]'));
+        
+        const serialVisual = elementosVisuais.find(el => {
+            const txt = clean(el.textContent);
+            // Regex: Começa com 4 letras maiusculas (FHTT, DACM, ETC) e segue com numeros/letras
+            // Tamanho total entre 10 e 20 chars. Ignora se tiver "->" ou espaços.
+            return /^[A-Z0-9]{4}[A-Z0-9]{6,16}$/.test(txt) && !txt.includes('->') && !txt.includes(' ');
+        });
 
-        if (!serial) {
-            const el = document.querySelector('.w-100.text-end[style*="14pt"]');
-            if (el) serial = el.textContent.trim();
+        if (serialVisual) {
+            return clean(serialVisual.textContent);
         }
 
+        // ESTRATÉGIA 2: BUSCA POR LABEL (TABELA) - FALLBACK
+        let serial = buscarDadoPorLabel(['Serial', 'Serial:', 'Serial Number', 'ID do Fabricante']);
+        
         if (!serial) return 'Não identificado';
 
-        // 1. Se tiver a seta "->", pega só o que vem DEPOIS dela
+        // Limpeza agressiva se cair no fallback
         if (serial.includes('->')) {
-            // Divide e pega o último pedaço (o serial novo)
             serial = serial.split('->').pop();
         }
-
-        // 2. Remove a palavra "N/A" se ela sobrou solta e limpa espaços
         serial = serial.replace(/N\/A/gi, '').trim();
 
         return serial;
@@ -180,7 +189,9 @@
         const servicePort = buscarDadoPorLabel(['Service Port']);
         const vlan = buscarDadoPorLabel(['VLAN (do perfil)', 'VLAN:']);
         const modelo = buscarDadoPorLabel(['Modelo de ONU', 'Modelo:']);
-        const serial = pegarSerialLimpo(); // <--- Serial Corrigido
+        
+        // Pega o serial (priorizando o do topo)
+        const serial = pegarSerialLimpo();
 
         const ultimoSinal = (dadosExtra && dadosExtra.sinal) ? dadosExtra.sinal : '–';
         const dataQueda = (dadosExtra && dadosExtra.data) ? dadosExtra.data : '–';
@@ -239,7 +250,7 @@
             const vlan = buscarDadoPorLabel(['VLAN (do perfil)', 'VLAN:']);
             const modelo = buscarDadoPorLabel(['Modelo de ONU', 'Modelo:']);
             
-            const serial = pegarSerialLimpo(); // <--- Serial Corrigido
+            const serial = pegarSerialLimpo(); 
 
             let firmware = buscarDadoPorLabel(['Firmware da ONU', 'Firmware:']).replace(/(valid|invalid).*?committed/gi,'').trim();
             const rxOltAtual = buscarDadoPorLabel(['Atenuação Rx OLT', 'Sinal OLT']);

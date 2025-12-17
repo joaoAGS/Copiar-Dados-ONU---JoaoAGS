@@ -5,7 +5,7 @@
   <br><br>
   
   <a href="https://raw.githubusercontent.com/joaoAGS/Copiar-Dados-ONU---JoaoAGS/main/Copiar%20Dados%20ONU%20-%20JoaoAGS.user.js">
-    <img src="https://img.shields.io/badge/⬇️_Instalar_Script-v1.3-success?style=for-the-badge&logo=tampermonkey" alt="Instalar Script">
+    <img src="https://img.shields.io/badge/⬇️_Instalar_Script-v1.4-success?style=for-the-badge&logo=tampermonkey" alt="Instalar Script">
   </a>
   
   <br>
