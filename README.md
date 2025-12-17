@@ -5,7 +5,7 @@
   <br><br>
   
   <a href="LINK_DO_SEU_SCRIPT_RAW">
-    <img src="https://img.shields.io/badge/⬇️_Instalar_Script-v17.0-success?style=for-the-badge&logo=tampermonkey" alt="Instalar Script">
+    <img src="https://img.shields.io/badge/⬇️_Instalar_Script-v1.0-success?style=for-the-badge&logo=tampermonkey" alt="Instalar Script">
   </a>
   
   <br>
