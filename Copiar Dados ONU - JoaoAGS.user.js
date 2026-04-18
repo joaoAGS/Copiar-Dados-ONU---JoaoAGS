@@ -1,27 +1,21 @@
 // ==UserScript==
-// @name         Copiar Dados ONU - JoaoAGS
+// @name         Copiar Dados ONU - JoaoAGS (Ajustado)
 // @namespace    http://tampermonkey.net/
-// @version      1.4
-// @description  Copia os dados da ONU, e faz teste de ONU LOSS (Serial Topo Fix)
+// @version      1.5
+// @description  Copia os dados da ONU, e faz teste de ONU LOSS com seletores atualizados
 // @author       Joao Augusto
-// @icon         https://avatars.githubusercontent.com/u/179055349?v=4
 // @match        https://autoisp.gegnet.com.br/contracted_services/*
 // @match        https://autoisp.gegnet.com.br/gpon_clients/*
 // @match        https://autoisp.acessoline.net.br/contracted_services/*
 // @match        https://autoisp.acessoline.net.br/gpon_clients/*
 // @grant        GM_setClipboard
 // ==/UserScript==
-// --- ESTRATÉGIA DE ATUALIZAÇÃO ---
-// @updateURL    https://raw.githubusercontent.com/joaoAGS/Copiar-Dados-ONU---JoaoAGS/main/Copiar%20Dados%20ONU%20-%20JoaoAGS.user.js
-// @downloadURL  https://raw.githubusercontent.com/joaoAGS/Copiar-Dados-ONU---JoaoAGS/main/Copiar%20Dados%20ONU%20-%20JoaoAGS.user.js
-//
-// ==/UserScript==
 
 (function () {
     'use strict';
 
     // --- UTILITÁRIOS ---
-    function clean(str) { return str ? str.replace(/\s+/g, ' ').trim() : ''; }
+    const clean = (str) => str ? str.replace(/\s+/g, ' ').trim() : '';
 
     function validarSinal(str) {
         if (!str) return null;
@@ -39,260 +33,167 @@
 
     function obterTexto(el) {
         if (!el) return '';
-        if (el.tagName === 'INPUT') return el.value.trim();
+        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return el.value.trim();
         const clone = el.cloneNode(true);
-        clone.querySelectorAll('i, svg, .badge').forEach(x => x.remove());
+        clone.querySelectorAll('i, svg, .badge, script, style').forEach(x => x.remove());
         return clean(clone.textContent);
     }
 
-    // --- NAVEGAÇÃO SEGURA ---
+    // --- NAVEGAÇÃO ---
     function trocarAba(nomeAba) {
-        const todosLinks = Array.from(document.querySelectorAll('a'));
-
-        let linkAlvo = todosLinks.find(a => {
-            const texto = clean(a.textContent);
-            const ehAba = a.classList.contains('nav-link') || a.closest('ul.nav') || a.closest('.tabs');
-            return ehAba && texto === nomeAba;
-        });
-
-        if (!linkAlvo) linkAlvo = todosLinks.find(a => clean(a.textContent) === nomeAba);
-        if (!linkAlvo) linkAlvo = todosLinks.find(a => clean(a.textContent).includes(nomeAba));
-
-        if (linkAlvo) {
-            linkAlvo.click();
+        const links = Array.from(document.querySelectorAll('.nav-link, .tabs a, a'));
+        const alvo = links.find(a => clean(a.textContent).toLowerCase().includes(nomeAba.toLowerCase()));
+        if (alvo) {
+            alvo.click();
             return true;
         }
         return false;
     }
 
-    // --- LEITURA RÁPIDA DA TABELA ---
-    function lerTabelaHistorico() {
-        const tables = document.getElementsByTagName('table');
-
-        for (let i = 0; i < tables.length; i++) {
-            const tbl = tables[i];
-            if (!tbl.innerText.toLowerCase().includes('onu rx anterior')) continue;
-
-            const headers = Array.from(tbl.querySelectorAll('th')).map(h => clean(h.textContent).toLowerCase());
-            const idxData = headers.findIndex(h => h.includes('data'));
-            const idxRxAnt = headers.findIndex(h => h.includes('anterior'));
-            const idxRx = headers.findIndex(h => h === 'onu rx' || h === 'rx');
-
-            const rows = tbl.querySelectorAll('tbody tr');
-            if (rows.length === 0) continue;
-
-            let dataRecente = (idxData >= 0) ? obterTexto(rows[0].cells[idxData]) : '–';
-
-            for (const row of rows) {
-                const cells = row.cells;
-                if (idxRxAnt >= 0 && cells[idxRxAnt]) {
-                    const s = validarSinal(obterTexto(cells[idxRxAnt]));
-                    if (s) return { sinal: s, data: (idxData >= 0 ? obterTexto(cells[idxData]) : dataRecente) };
-                }
-                if (idxRx >= 0 && cells[idxRx]) {
-                    const s = validarSinal(obterTexto(cells[idxRx]));
-                    if (s) return { sinal: s, data: (idxData >= 0 ? obterTexto(cells[idxData]) : dataRecente) };
-                }
-            }
-        }
-        return null;
-    }
-
-    // --- PROCESSADOR TURBO ---
-    function iniciarBuscaTurbo(callback) {
-        let dados = lerTabelaHistorico();
-        if (dados) { callback(dados); return; }
-
-        if (!trocarAba('Diagnóstico GPON')) {
-            alert('Erro: Aba Diagnóstico GPON não encontrada.');
-            callback(null);
-            return;
-        }
-
-        let tentativas = 0;
-        const intervalo = setInterval(() => {
-            tentativas++;
-            dados = lerTabelaHistorico();
-
-            if (dados) {
-                clearInterval(intervalo);
-                trocarAba('Geral');
-                callback(dados);
-            }
-            else if (tentativas > 60) {
-                clearInterval(intervalo);
-                trocarAba('Geral');
-                callback(null);
-            }
-        }, 50);
-    }
-
+    // --- BUSCA DE DADOS ---
     function buscarDadoPorLabel(labels) {
         if (!Array.isArray(labels)) labels = [labels];
+        
         for (const label of labels) {
-            const xpath = `//*[contains(text(), '${label}')]`;
-            const result = document.evaluate(xpath, document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
-            for (let i = 0; i < result.snapshotLength; i++) {
-                const el = result.snapshotItem(i);
-                if (['SCRIPT', 'STYLE', 'BUTTON'].includes(el.tagName)) continue;
-                if (el.tagName === 'TH' || el.tagName === 'TD') {
-                    const row = el.closest('tr');
-                    if (row && row.cells) {
-                        const cells = Array.from(row.cells);
-                        const idx = cells.indexOf(el);
-                        if (cells[idx + 1]) return obterTexto(cells[idx + 1]);
-                    }
+            // Busca o elemento que contém o texto exato ou aproximado
+            const xpath = `//th[contains(text(),'${label}')] | //td[contains(text(),'${label}')] | //label[contains(text(),'${label}')]`;
+            const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+            
+            if (result) {
+                // Tenta pegar o próximo TD ou o elemento pai se for uma estrutura de grid
+                let valor = "";
+                if (result.nextElementSibling) {
+                    valor = obterTexto(result.nextElementSibling);
+                } else if (result.parentElement.nextElementSibling) {
+                    valor = obterTexto(result.parentElement.nextElementSibling);
                 }
-                if (el.nextElementSibling) return obterTexto(el.nextElementSibling);
+                if (valor) return valor;
             }
         }
         return '';
     }
 
-    // --- FUNÇÃO DE SERIAL (V1.4 - PRIORIDADE VISUAL) ---
     function pegarSerialLimpo() {
-        // ESTRATÉGIA 1: BUSCA VISUAL (O Serial grande no canto direito)
-        // Procura aquele texto destacado no canto do card, que geralmente é o serial limpo
-        // Seletor busca elementos com classe text-end (Bootstrap) que tenham cara de serial
-        const elementosVisuais = Array.from(document.querySelectorAll('.text-end, .text-right, [style*="text-align: right"]'));
+        // Estratégia 1: Procura o serial grande no cabeçalho (comum no Auto ISP)
+        const badges = Array.from(document.querySelectorAll('.badge, .text-end, h3, h4'));
+        const serialRegex = /^[A-Z0-9]{4}[A-Z0-9]{8,12}$/;
         
-        const serialVisual = elementosVisuais.find(el => {
-            const txt = clean(el.textContent);
-            // Regex: Começa com 4 letras maiusculas (FHTT, DACM, ETC) e segue com numeros/letras
-            // Tamanho total entre 10 e 20 chars. Ignora se tiver "->" ou espaços.
-            return /^[A-Z0-9]{4}[A-Z0-9]{6,16}$/.test(txt) && !txt.includes('->') && !txt.includes(' ');
-        });
-
-        if (serialVisual) {
-            return clean(serialVisual.textContent);
+        for (let b of badges) {
+            let txt = clean(b.textContent).replace(/[^A-Z0-9]/gi, '');
+            if (serialRegex.test(txt)) return txt;
         }
 
-        // ESTRATÉGIA 2: BUSCA POR LABEL (TABELA) - FALLBACK
-        let serial = buscarDadoPorLabel(['Serial', 'Serial:', 'Serial Number', 'ID do Fabricante']);
-        
-        if (!serial) return 'Não identificado';
+        // Estratégia 2: Tabela de informações
+        let serial = buscarDadoPorLabel(['Serial', 'SN', 'ID do Fabricante']);
+        return serial.includes('->') ? serial.split('->').pop().trim() : serial;
+    }
 
-        // Limpeza agressiva se cair no fallback
-        if (serial.includes('->')) {
-            serial = serial.split('->').pop();
+    // --- LÓGICA DE HISTÓRICO ---
+    function lerTabelaHistorico() {
+        const tabelas = Array.from(document.querySelectorAll('table'));
+        const tbl = tabelas.find(t => t.innerText.toLowerCase().includes('rx'));
+        
+        if (!tbl) return null;
+        const rows = tbl.querySelectorAll('tbody tr');
+        if (!rows.length) return null;
+
+        const cells = rows[0].cells;
+        // Tenta pegar o sinal da primeira linha (mais recente)
+        for (let cell of cells) {
+            let s = validarSinal(obterTexto(cell));
+            if (s) return { sinal: s, data: obterTexto(cells[0]) };
         }
-        serial = serial.replace(/N\/A/gi, '').trim();
-
-        return serial;
+        return null;
     }
 
-    function gerarRelatorio(dadosExtra) {
-        const descOLT = buscarDadoPorLabel(['Descrição na OLT', 'Local:']);
-        const olt = buscarDadoPorLabel(['OLT', 'OLT:']);
-        const pon = buscarDadoPorLabel(['PON Link']);
-        const onuid = buscarDadoPorLabel(['ONU ID']);
-        const servicePort = buscarDadoPorLabel(['Service Port']);
-        const vlan = buscarDadoPorLabel(['VLAN (do perfil)', 'VLAN:']);
-        const modelo = buscarDadoPorLabel(['Modelo de ONU', 'Modelo:']);
-        
-        // Pega o serial (priorizando o do topo)
-        const serial = pegarSerialLimpo();
-
-        const ultimoSinal = (dadosExtra && dadosExtra.sinal) ? dadosExtra.sinal : '–';
-        const dataQueda = (dadosExtra && dadosExtra.data) ? dadosExtra.data : '–';
-
-        const msgLoss = [
-            '',
-            '--- TESTES CSA / ROTEADOR / ONU ---',
-            'Verificado ONU DOWN (LINK LOSS)',
-            `Local: ${descOLT}`,
-            `Link: ${olt} ${pon} ID ${onuid}`,
-            `Service Port: ${servicePort}`,
-            `VLAN: ${vlan}`,
-            `Modelo da ONU: ${modelo || 'Não identificado'}`,
-            `Serial: ${serial}`,
-            `Plano desconectado desde: ${dataQueda}`,
-            `Último sinal ONU: ${ultimoSinal}`,
-            'Demais clientes da caixa estão UP',
-            'Energia confirmada',
-            'Equipamentos reiniciados sem sucesso',
-            'Cabos verificados',
-            '',
-            '--- LOGÍSTICA / O.S. ---',
-            'Cliente sem acesso, ONU DOWN com link loss.',
-            'Encaminhar técnico.'
-        ].join('\n');
-
-        GM_setClipboard(msgLoss);
-    }
-
+    // --- UI E EXECUÇÃO ---
     function criarBotao(id, texto, cor, aoClicar) {
         if (document.getElementById(id)) return;
         const btn = document.createElement('button');
         btn.id = id;
         btn.innerHTML = texto;
-        btn.className = `btn btn-${cor}`;
-        btn.style.margin = '5px 5px 5px 0';
-        const container = document.querySelector('.general-buttons-wrapper.card-body');
-        if (container) container.appendChild(btn);
+        btn.className = `btn btn-sm btn-${cor}`;
+        btn.style.cssText = 'margin: 5px; font-weight: bold; border-radius: 4px;';
+        
+        const container = document.querySelector('.card-header .float-end, .general-buttons-wrapper');
+        if (container) container.prepend(btn);
         else {
-            Object.assign(btn.style, { position: 'fixed', top: '60px', right: '10px', zIndex: '9999' });
+            btn.style.cssText += 'position:fixed; top:70px; right:10px; z-index:9999;';
             document.body.appendChild(btn);
         }
-        btn.addEventListener('click', (e) => { e.preventDefault(); aoClicar(btn); });
+        
+        btn.onclick = (e) => { e.preventDefault(); aoClicar(btn); };
     }
 
-    function executarScript() {
-        const rxOnuAtual = buscarDadoPorLabel(['Atenuação Rx ONU', 'Sinal ONU']);
-        const isLoss = !validarSinal(rxOnuAtual) || /(loss|los|sem sinal|down)/i.test(rxOnuAtual);
+    function montarECopiar(isLoss, dadosExtra = null) {
+        const dados = {
+            local: buscarDadoPorLabel(['Descrição', 'Local']),
+            link: `${buscarDadoPorLabel(['OLT'])} ${buscarDadoPorLabel(['PON'])} ID ${buscarDadoPorLabel(['ONU ID'])}`,
+            sp: buscarDadoPorLabel(['Service Port']),
+            vlan: buscarDadoPorLabel(['VLAN']),
+            modelo: buscarDadoPorLabel(['Modelo']),
+            serial: pegarSerialLimpo(),
+            rx: buscarDadoPorLabel(['Atenuação Rx ONU', 'Sinal ONU']) || 'N/A'
+        };
 
-        criarBotao('btn-copiar-onu', '📋 Copiar Dados', 'success', (btn) => {
-            const descOLT = buscarDadoPorLabel(['Descrição na OLT', 'Local:']);
-            const olt = buscarDadoPorLabel(['OLT', 'OLT:']);
-            const pon = buscarDadoPorLabel(['PON Link']);
-            const onuid = buscarDadoPorLabel(['ONU ID']);
-            const servicePort = buscarDadoPorLabel(['Service Port']);
-            const vlan = buscarDadoPorLabel(['VLAN (do perfil)', 'VLAN:']);
-            const modelo = buscarDadoPorLabel(['Modelo de ONU', 'Modelo:']);
-            
-            const serial = pegarSerialLimpo(); 
-
-            let firmware = buscarDadoPorLabel(['Firmware da ONU', 'Firmware:']).replace(/(valid|invalid).*?committed/gi,'').trim();
-            const rxOltAtual = buscarDadoPorLabel(['Atenuação Rx OLT', 'Sinal OLT']);
-            const uptime = buscarDadoPorLabel(['Uptime da ONU', 'Uptime:']);
-            const alarmes = buscarDadoPorLabel(['Alarmes']);
-
-            const linhas = [
+        let relatorio = "";
+        if (isLoss) {
+            relatorio = [
+                '--- TESTES ONU LOSS ---',
+                `Local: ${dados.local}`,
+                `Link: ${dados.link}`,
+                `Serial: ${dados.serial}`,
+                `Modelo: ${dados.modelo}`,
+                `VLAN: ${dados.vlan}`,
+                `Último Sinal: ${dadosExtra?.sinal || 'Sem histórico'}`,
+                `Queda registrada: ${dadosExtra?.data || 'N/A'}`,
+                '------------------------',
+                'ONU DOWN (Link Loss). Energia OK, cabos revisados.'
+            ].join('\n');
+        } else {
+            relatorio = [
                 '[DADOS DA ONU]',
-                `Local: ${descOLT}`,
-                `Link: ${olt} ${pon} ID ${onuid}`,
-                `Service Port: ${servicePort}`,
-                `VLAN: ${vlan}`,
-                `Modelo: ${modelo}`,
-                `Serial: ${serial}`,
-                `Firmware: ${firmware}`,
-                `Rx ONU: ${rxOnuAtual} (${isLoss ? 'DOWN' : 'UP'})`,
-                `Rx OLT: ${rxOltAtual}`,
-                `Uptime: ${uptime}`
-            ];
-            if (isLoss) linhas.push(`Alarmes: ${alarmes || 'Sem info'}`);
-            
-            GM_setClipboard(linhas.join('\n'));
-            const orig = btn.innerHTML;
-            btn.innerHTML = 'Copiado!';
-            setTimeout(() => btn.innerHTML = orig, 1000);
+                `Local: ${dados.local}`,
+                `Link: ${dados.link}`,
+                `Serial: ${dados.serial}`,
+                `Sinal: ${dados.rx}`,
+                `VLAN: ${dados.vlan}`
+            ].join('\n');
+        }
+
+        GM_setClipboard(relatorio);
+    }
+
+    function iniciar() {
+        const rx = buscarDadoPorLabel(['Atenuação Rx ONU', 'Sinal ONU']);
+        const isLoss = !validarSinal(rx) || /loss|down|sem/i.test(rx);
+
+        criarBotao('btn-copy-ags', '📋 Copiar Dados', 'primary', (btn) => {
+            montarECopiar(false);
+            btn.innerHTML = '✅ Copiado!';
+            setTimeout(() => btn.innerHTML = '📋 Copiar Dados', 2000);
         });
 
         if (isLoss) {
-            criarBotao('btn-onu-down', '🚨 Teste ONU LOSS', 'danger', (btn) => {
-                const orig = btn.innerHTML;
-                btn.innerHTML = '⚡';
-                btn.disabled = true;
-
-                iniciarBuscaTurbo((dados) => {
-                    gerarRelatorio(dados);
-                    btn.innerHTML = 'Copiado!';
-                    btn.disabled = false;
-                    setTimeout(() => btn.innerHTML = orig, 1500);
-                });
+            criarBotao('btn-loss-ags', '🚨 LOSS', 'danger', (btn) => {
+                const original = btn.innerHTML;
+                btn.innerHTML = '⌛ Aguarde...';
+                
+                if (trocarAba('Diagnóstico')) {
+                    setTimeout(() => {
+                        const h = lerTabelaHistorico();
+                        trocarAba('Geral');
+                        montarECopiar(true, h);
+                        btn.innerHTML = '✅ Relatório OK!';
+                        setTimeout(() => btn.innerHTML = original, 2000);
+                    }, 1500);
+                } else {
+                    montarECopiar(true);
+                }
             });
         }
     }
 
-    window.addEventListener('load', () => setTimeout(executarScript, 800));
+    // Executa após um delay para garantir que o AJAX do site carregou os dados
+    setTimeout(iniciar, 1500);
 })();
