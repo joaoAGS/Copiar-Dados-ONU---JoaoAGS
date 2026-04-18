@@ -7,6 +7,7 @@
 // @match        https://autoisp.gegnet.com.br/*
 // @match        https://autoisp.acessoline.net.br/*
 // @grant        GM_setClipboard
+// @icon         https://avatars.githubusercontent.com/u/179055349?v=4
 // ==/UserScript==
 
 (function () {
