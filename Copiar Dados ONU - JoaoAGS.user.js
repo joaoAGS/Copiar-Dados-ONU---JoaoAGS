@@ -1,199 +1,129 @@
 // ==UserScript==
-// @name         Copiar Dados ONU - JoaoAGS (Ajustado)
+// @name         Copiar Dados ONU - JoaoAGS (v1.6 Fix)
 // @namespace    http://tampermonkey.net/
-// @version      1.5
-// @description  Copia os dados da ONU, e faz teste de ONU LOSS com seletores atualizados
+// @version      1.6
+// @description  Ajuste de botões fixos e navegação interna sem reload
 // @author       Joao Augusto
-// @match        https://autoisp.gegnet.com.br/contracted_services/*
-// @match        https://autoisp.gegnet.com.br/gpon_clients/*
-// @match        https://autoisp.acessoline.net.br/contracted_services/*
-// @match        https://autoisp.acessoline.net.br/gpon_clients/*
+// @match        https://autoisp.gegnet.com.br/*
+// @match        https://autoisp.acessoline.net.br/*
 // @grant        GM_setClipboard
 // ==/UserScript==
 
 (function () {
     'use strict';
 
-    // --- UTILITÁRIOS ---
     const clean = (str) => str ? str.replace(/\s+/g, ' ').trim() : '';
 
-    function validarSinal(str) {
-        if (!str) return null;
-        let normalizado = str.replace(/[\u2013\u2014\u2212]/g, '-');
-        const match = normalizado.match(/(-?\d+[\.,]\d+)/);
-        if (match) {
-            let num = parseFloat(match[1].replace(',', '.'));
-            if (!isNaN(num)) {
-                if (num > 0) num = -num;
-                if (num < -1 && num > -90) return num.toFixed(2) + ' dBm';
-            }
-        }
-        return null;
-    }
-
-    function obterTexto(el) {
-        if (!el) return '';
-        if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') return el.value.trim();
-        const clone = el.cloneNode(true);
-        clone.querySelectorAll('i, svg, .badge, script, style').forEach(x => x.remove());
-        return clean(clone.textContent);
-    }
-
-    // --- NAVEGAÇÃO ---
-    function trocarAba(nomeAba) {
-        const links = Array.from(document.querySelectorAll('.nav-link, .tabs a, a'));
-        const alvo = links.find(a => clean(a.textContent).toLowerCase().includes(nomeAba.toLowerCase()));
-        if (alvo) {
-            alvo.click();
-            return true;
-        }
-        return false;
-    }
-
-    // --- BUSCA DE DADOS ---
-    function buscarDadoPorLabel(labels) {
-        if (!Array.isArray(labels)) labels = [labels];
-        
-        for (const label of labels) {
-            // Busca o elemento que contém o texto exato ou aproximado
-            const xpath = `//th[contains(text(),'${label}')] | //td[contains(text(),'${label}')] | //label[contains(text(),'${label}')]`;
-            const result = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
-            
-            if (result) {
-                // Tenta pegar o próximo TD ou o elemento pai se for uma estrutura de grid
-                let valor = "";
-                if (result.nextElementSibling) {
-                    valor = obterTexto(result.nextElementSibling);
-                } else if (result.parentElement.nextElementSibling) {
-                    valor = obterTexto(result.parentElement.nextElementSibling);
-                }
+    // --- FUNÇÕES DE BUSCA ---
+    function buscarValor(labels) {
+        const alvos = Array.isArray(labels) ? labels : [labels];
+        for (const label of alvos) {
+            const el = Array.from(document.querySelectorAll('th, td, label, .info-label'))
+                            .find(e => clean(e.textContent).toLowerCase().includes(label.toLowerCase()));
+            if (el) {
+                const valor = el.nextElementSibling ? clean(el.nextElementSibling.textContent) : clean(el.parentElement.innerText.replace(label, ''));
                 if (valor) return valor;
             }
         }
-        return '';
+        return '---';
     }
 
-    function pegarSerialLimpo() {
-        // Estratégia 1: Procura o serial grande no cabeçalho (comum no Auto ISP)
-        const badges = Array.from(document.querySelectorAll('.badge, .text-end, h3, h4'));
-        const serialRegex = /^[A-Z0-9]{4}[A-Z0-9]{8,12}$/;
-        
-        for (let b of badges) {
-            let txt = clean(b.textContent).replace(/[^A-Z0-9]/gi, '');
-            if (serialRegex.test(txt)) return txt;
+    function pegarSerial() {
+        // Tenta pegar o serial destacado (geralmente em badges ou h3)
+        const possiveis = Array.from(document.querySelectorAll('.badge, h3, h4, .text-end, b'));
+        const regex = /^[A-Z0-9]{12,16}$/;
+        for (let p of possiveis) {
+            let txt = clean(p.textContent).replace(/[^A-Z0-9]/gi, '');
+            if (regex.test(txt)) return txt;
         }
-
-        // Estratégia 2: Tabela de informações
-        let serial = buscarDadoPorLabel(['Serial', 'SN', 'ID do Fabricante']);
-        return serial.includes('->') ? serial.split('->').pop().trim() : serial;
+        return buscarValor(['Serial', 'ID do Fabricante', 'SN']);
     }
 
-    // --- LÓGICA DE HISTÓRICO ---
-    function lerTabelaHistorico() {
-        const tabelas = Array.from(document.querySelectorAll('table'));
-        const tbl = tabelas.find(t => t.innerText.toLowerCase().includes('rx'));
-        
-        if (!tbl) return null;
-        const rows = tbl.querySelectorAll('tbody tr');
-        if (!rows.length) return null;
-
-        const cells = rows[0].cells;
-        // Tenta pegar o sinal da primeira linha (mais recente)
-        for (let cell of cells) {
-            let s = validarSinal(obterTexto(cell));
-            if (s) return { sinal: s, data: obterTexto(cells[0]) };
+    // --- INTERFACE (BOTÕES FIXOS) ---
+    function injetarContainer() {
+        let container = document.getElementById('wrapper-botoes-joao');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'wrapper-botoes-joao';
+            container.style.cssText = 'position: fixed; top: 10px; right: 20px; z-index: 9999; display: flex; gap: 10px; background: rgba(255,255,255,0.9); padding: 10px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.2); border: 1px solid #ccc;';
+            document.body.appendChild(container);
         }
-        return null;
+        return container;
     }
 
-    // --- UI E EXECUÇÃO ---
-    function criarBotao(id, texto, cor, aoClicar) {
-        if (document.getElementById(id)) return;
+    function adicionarBotao(texto, cor, onClick) {
+        const container = injetarContainer();
         const btn = document.createElement('button');
-        btn.id = id;
-        btn.innerHTML = texto;
-        btn.className = `btn btn-sm btn-${cor}`;
-        btn.style.cssText = 'margin: 5px; font-weight: bold; border-radius: 4px;';
-        
-        const container = document.querySelector('.card-header .float-end, .general-buttons-wrapper');
-        if (container) container.prepend(btn);
-        else {
-            btn.style.cssText += 'position:fixed; top:70px; right:10px; z-index:9999;';
-            document.body.appendChild(btn);
-        }
-        
-        btn.onclick = (e) => { e.preventDefault(); aoClicar(btn); };
+        btn.innerText = texto;
+        btn.style.cssText = `padding: 8px 15px; border: none; border-radius: 5px; color: white; cursor: pointer; font-weight: bold; background-color: ${cor};`;
+        btn.onclick = onClick;
+        container.appendChild(btn);
+        return btn;
     }
 
-    function montarECopiar(isLoss, dadosExtra = null) {
+    // --- LÓGICA PRINCIPAL ---
+    function copiarDados(modoLoss = false) {
         const dados = {
-            local: buscarDadoPorLabel(['Descrição', 'Local']),
-            link: `${buscarDadoPorLabel(['OLT'])} ${buscarDadoPorLabel(['PON'])} ID ${buscarDadoPorLabel(['ONU ID'])}`,
-            sp: buscarDadoPorLabel(['Service Port']),
-            vlan: buscarDadoPorLabel(['VLAN']),
-            modelo: buscarDadoPorLabel(['Modelo']),
-            serial: pegarSerialLimpo(),
-            rx: buscarDadoPorLabel(['Atenuação Rx ONU', 'Sinal ONU']) || 'N/A'
+            local: buscarValor(['Local', 'Descrição']),
+            link: `${buscarValor(['OLT'])} - ${buscarValor(['PON'])}`,
+            id: buscarValor(['ONU ID']),
+            vlan: buscarValor(['VLAN']),
+            serial: pegarSerial(),
+            modelo: buscarValor(['Modelo']),
+            rx: buscarValor(['Sinal ONU', 'Rx ONU'])
         };
 
-        let relatorio = "";
-        if (isLoss) {
-            relatorio = [
-                '--- TESTES ONU LOSS ---',
-                `Local: ${dados.local}`,
-                `Link: ${dados.link}`,
-                `Serial: ${dados.serial}`,
-                `Modelo: ${dados.modelo}`,
-                `VLAN: ${dados.vlan}`,
-                `Último Sinal: ${dadosExtra?.sinal || 'Sem histórico'}`,
-                `Queda registrada: ${dadosExtra?.data || 'N/A'}`,
-                '------------------------',
-                'ONU DOWN (Link Loss). Energia OK, cabos revisados.'
-            ].join('\n');
+        let msg = "";
+        if (modoLoss) {
+            msg = `--- TESTES ONU LOSS ---\nLocal: ${dados.local}\nLink: ${dados.link} ID: ${dados.id}\nSerial: ${dados.serial}\nModelo: ${dados.modelo}\nStatus: ONU DOWN (Link Loss)\n-----------------------`;
         } else {
-            relatorio = [
-                '[DADOS DA ONU]',
-                `Local: ${dados.local}`,
-                `Link: ${dados.link}`,
-                `Serial: ${dados.serial}`,
-                `Sinal: ${dados.rx}`,
-                `VLAN: ${dados.vlan}`
-            ].join('\n');
+            msg = `[DADOS ONU]\nLocal: ${dados.local}\nLink: ${dados.link} ID: ${dados.id}\nSerial: ${dados.serial}\nSinal: ${dados.rx}\nVLAN: ${dados.vlan}`;
         }
 
-        GM_setClipboard(relatorio);
+        GM_setClipboard(msg);
     }
 
-    function iniciar() {
-        const rx = buscarDadoPorLabel(['Atenuação Rx ONU', 'Sinal ONU']);
-        const isLoss = !validarSinal(rx) || /loss|down|sem/i.test(rx);
-
-        criarBotao('btn-copy-ags', '📋 Copiar Dados', 'primary', (btn) => {
-            montarECopiar(false);
-            btn.innerHTML = '✅ Copiado!';
-            setTimeout(() => btn.innerHTML = '📋 Copiar Dados', 2000);
+    function init() {
+        // Botão padrão
+        adicionarBotao('📋 Copiar Dados', '#28a745', (e) => {
+            const b = e.target;
+            copiarDados(false);
+            b.innerText = '✅ Copiado!';
+            setTimeout(() => b.innerText = '📋 Copiar Dados', 2000);
         });
 
-        if (isLoss) {
-            criarBotao('btn-loss-ags', '🚨 LOSS', 'danger', (btn) => {
-                const original = btn.innerHTML;
-                btn.innerHTML = '⌛ Aguarde...';
+        // Botão Loss (apenas se detectar sinal baixo ou texto de down)
+        const sinal = buscarValor(['Sinal ONU', 'Rx ONU']).toLowerCase();
+        if (sinal.includes('loss') || sinal.includes('down') || sinal.includes('-40') || sinal === '---') {
+            adicionarBotao('🚨 Relatório LOSS', '#dc3545', (e) => {
+                const b = e.target;
                 
-                if (trocarAba('Diagnóstico')) {
+                // Tenta trocar para aba Diagnóstico se existir, sem recarregar
+                const abaDiag = Array.from(document.querySelectorAll('.nav-link')).find(a => a.innerText.includes('Diagnóstico'));
+                if (abaDiag) {
+                    abaDiag.click();
+                    b.innerText = '⌛ Lendo...';
                     setTimeout(() => {
-                        const h = lerTabelaHistorico();
-                        trocarAba('Geral');
-                        montarECopiar(true, h);
-                        btn.innerHTML = '✅ Relatório OK!';
-                        setTimeout(() => btn.innerHTML = original, 2000);
-                    }, 1500);
+                        copiarDados(true);
+                        b.innerText = '✅ Relatório OK!';
+                        const abaGeral = Array.from(document.querySelectorAll('.nav-link')).find(a => a.innerText.includes('Geral'));
+                        if (abaGeral) abaGeral.click();
+                        setTimeout(() => b.innerText = '🚨 Relatório LOSS', 2000);
+                    }, 1200);
                 } else {
-                    montarECopiar(true);
+                    copiarDados(true);
+                    b.innerText = '✅ Copiado!';
+                    setTimeout(() => b.innerText = '🚨 Relatório LOSS', 2000);
                 }
             });
         }
     }
 
-    // Executa após um delay para garantir que o AJAX do site carregou os dados
-    setTimeout(iniciar, 1500);
+    // Aguarda o site carregar o básico
+    if (document.readyState === 'complete') {
+        setTimeout(init, 1000);
+    } else {
+        window.addEventListener('load', () => setTimeout(init, 1000));
+    }
+
 })();
