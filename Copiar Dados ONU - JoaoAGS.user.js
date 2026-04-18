@@ -1,8 +1,8 @@
 // ==UserScript==
-// @name         Copiar Dados ONU - JoaoAGS (V2.0 Definitivo)
+// @name         Copiar Dados ONU - JoaoAGS (V2.1 Imortal)
 // @namespace    http://tampermonkey.net/
-// @version      2.0
-// @description  Copia dados, faz teste LOSS em background e possui painel UI isolado.
+// @version      2.1
+// @description  Painel flutuante com injeção persistente para sistemas SPA (AutoISP)
 // @author       Joao Augusto
 // @match        https://autoisp.gegnet.com.br/*
 // @match        https://autoisp.acessoline.net.br/*
@@ -40,7 +40,6 @@
                 const el = result.snapshotItem(i);
                 if (['SCRIPT', 'STYLE', 'BUTTON'].includes(el.tagName)) continue;
                 
-                // Se for tabela
                 if (el.tagName === 'TH' || el.tagName === 'TD') {
                     const row = el.closest('tr');
                     if (row && row.cells) {
@@ -49,7 +48,6 @@
                         if (cells[idx + 1]) return clean(cells[idx + 1].textContent);
                     }
                 }
-                // Se for label padrão
                 if (el.nextElementSibling) return clean(el.nextElementSibling.textContent);
             }
         }
@@ -57,23 +55,21 @@
     }
 
     function pegarSerialLimpo() {
-        const elementosVisuais = Array.from(document.querySelectorAll('.text-end, .badge, h3, h4'));
+        const elementosVisuais = Array.from(document.querySelectorAll('.text-end, .badge, h3, h4, b, strong'));
         const regexSerial = /^[A-Z0-9]{4}[A-Z0-9]{6,16}$/;
         
-        const serialVisual = elementosVisuais.find(el => {
+        for (const el of elementosVisuais) {
             const txt = clean(el.textContent).replace(/[^A-Z0-9]/gi, '');
-            return regexSerial.test(txt);
-        });
+            if (regexSerial.test(txt)) return txt;
+        }
 
-        if (serialVisual) return clean(serialVisual.textContent).replace(/[^A-Z0-9]/gi, '');
-
-        let serial = buscarDado(['Serial', 'Serial Number', 'ID do Fabricante']);
+        let serial = buscarDado(['Serial', 'Serial Number', 'ID do Fabricante', 'SN']);
         if (serial.includes('->')) serial = serial.split('->').pop();
         return serial.replace(/N\/A/gi, '').trim() || 'Não identificado';
     }
 
-    // --- LEITURA DE HISTÓRICO EM SEGUNDO PLANO (FETCH) ---
-    function extrairHistoricoTabela(doc) {
+    // --- HISTÓRICO EM BACKGROUND ---
+    function extrairHistorico(doc) {
         const tables = doc.getElementsByTagName('table');
         for (let i = 0; i < tables.length; i++) {
             const tbl = tables[i];
@@ -99,24 +95,20 @@
     }
 
     async function buscarHistoricoSilencioso() {
-        // Acha o link da aba Diagnóstico
-        const links = Array.from(document.querySelectorAll('a.nav-link, a.tab-link'));
+        const links = Array.from(document.querySelectorAll('a.nav-link, a.tab-link, a'));
         const abaDiag = links.find(a => clean(a.textContent).toLowerCase().includes('diagnóstico'));
 
         if (!abaDiag || !abaDiag.href || abaDiag.href.includes('#')) {
-            // Se não tem link de página nova, lê a tela atual
-            return extrairHistoricoTabela(document);
+            return extrairHistorico(document);
         }
 
         try {
-            // Baixa a página de diagnóstico invisivelmente
             const response = await fetch(abaDiag.href);
             const html = await response.text();
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
-            return extrairHistoricoTabela(doc);
+            return extrairHistorico(doc);
         } catch (e) {
-            console.error("Erro ao buscar histórico em background", e);
             return null;
         }
     }
@@ -124,19 +116,20 @@
     // --- GERAÇÃO DE RELATÓRIO ---
     async function gerarRelatorio(isLoss, btn) {
         const textoOriginal = btn.innerHTML;
-        btn.innerHTML = '⏳ Processando...';
+        btn.innerHTML = '⏳ Copiando...';
         btn.disabled = true;
 
+        const rxAtual = buscarDado(['Atenuação Rx ONU', 'Sinal ONU', 'Sinal']);
         const dados = {
-            descOLT: buscarDado(['Descrição na OLT', 'Local:']),
+            descOLT: buscarDado(['Descrição na OLT', 'Local:', 'Designação']),
             olt: buscarDado(['OLT', 'OLT:']),
-            pon: buscarDado(['PON Link']),
-            onuid: buscarDado(['ONU ID']),
+            pon: buscarDado(['PON Link', 'Slot/Pon']),
+            onuid: buscarDado(['ONU ID', 'ID:']),
             servicePort: buscarDado(['Service Port']),
             vlan: buscarDado(['VLAN (do perfil)', 'VLAN:']),
-            modelo: buscarDado(['Modelo de ONU', 'Modelo:']),
+            modelo: buscarDado(['Modelo de ONU', 'Modelo:', 'Equipamento']),
             serial: pegarSerialLimpo(),
-            rxAtual: buscarDado(['Atenuação Rx ONU', 'Sinal ONU']),
+            rxAtual: rxAtual,
             rxOlt: buscarDado(['Atenuação Rx OLT', 'Sinal OLT']),
             uptime: buscarDado(['Uptime da ONU', 'Uptime:']),
             firmware: buscarDado(['Firmware da ONU', 'Firmware:']).replace(/(valid|invalid).*?committed/gi,'').trim()
@@ -150,7 +143,7 @@
                 '--- TESTES CSA / ROTEADOR / ONU ---',
                 'Verificado ONU DOWN (LINK LOSS)',
                 `Local: ${dados.descOLT}`,
-                `Link: ${dados.olt} ${dados.pon} ID ${dados.onuid}`,
+                `Link: ${dados.olt} | ${dados.pon} | ID ${dados.onuid}`,
                 `Service Port: ${dados.servicePort}`,
                 `VLAN: ${dados.vlan}`,
                 `Modelo da ONU: ${dados.modelo || 'Não identificado'}`,
@@ -170,7 +163,7 @@
             relatorio = [
                 '[DADOS DA ONU]',
                 `Local: ${dados.descOLT}`,
-                `Link: ${dados.olt} ${dados.pon} ID ${dados.onuid}`,
+                `Link: ${dados.olt} | ${dados.pon} | ID ${dados.onuid}`,
                 `Service Port: ${dados.servicePort}`,
                 `VLAN: ${dados.vlan}`,
                 `Modelo: ${dados.modelo}`,
@@ -188,52 +181,53 @@
         setTimeout(() => {
             btn.innerHTML = textoOriginal;
             btn.disabled = false;
-        }, 2000);
+        }, 1500);
     }
 
-    // --- UI: PAINEL FLUTUANTE ISOLADO ---
+    // --- UI: PAINEL FLUTUANTE PERSISTENTE ---
     function criarPainelUI() {
-        if (document.getElementById('ags-panel')) return;
+        if (document.getElementById('ags-panel-v2')) return;
 
-        const rxAtual = buscarDado(['Atenuação Rx ONU', 'Sinal ONU']);
-        const isLoss = !validarSinal(rxAtual) || /(loss|los|sem sinal|down)/i.test(rxAtual);
+        const rxAtual = buscarDado(['Atenuação Rx ONU', 'Sinal ONU', 'Sinal']);
+        const isLoss = !validarSinal(rxAtual) || /(loss|los|sem sinal|down)/i.test(rxAtual) || rxAtual === '';
 
         const painel = document.createElement('div');
-        painel.id = 'ags-panel';
+        painel.id = 'ags-panel-v2';
         painel.style.cssText = `
             position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: white;
-            border: 2px solid #ccc;
+            bottom: 30px;
+            right: 30px;
+            background: #f8f9fa;
+            border: 1px solid #ced4da;
             border-radius: 8px;
-            padding: 10px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            z-index: 999999;
+            padding: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.4);
+            z-index: 2147483647; /* Força ficar na frente de tudo */
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
             font-family: Arial, sans-serif;
-            width: 200px;
+            width: 220px;
         `;
 
         const titulo = document.createElement('div');
-        titulo.innerHTML = '🛠️ <b>Ferramentas ONU</b>';
+        titulo.innerHTML = '<b>⚙️ Tools ONU - AGS</b>';
         titulo.style.textAlign = 'center';
         titulo.style.fontSize = '14px';
         titulo.style.color = '#333';
+        titulo.style.marginBottom = '5px';
         painel.appendChild(titulo);
 
         const btnCopiar = document.createElement('button');
         btnCopiar.innerHTML = '📋 Copiar Dados';
-        btnCopiar.style.cssText = 'padding: 8px; border: none; border-radius: 4px; background: #28a745; color: white; font-weight: bold; cursor: pointer;';
+        btnCopiar.style.cssText = 'padding: 10px; border: none; border-radius: 5px; background: #0d6efd; color: white; font-weight: bold; cursor: pointer; font-size: 13px;';
         btnCopiar.onclick = () => gerarRelatorio(false, btnCopiar);
         painel.appendChild(btnCopiar);
 
         if (isLoss) {
             const btnLoss = document.createElement('button');
-            btnLoss.innerHTML = '🚨 Teste LOSS';
-            btnLoss.style.cssText = 'padding: 8px; border: none; border-radius: 4px; background: #dc3545; color: white; font-weight: bold; cursor: pointer;';
+            btnLoss.innerHTML = '🚨 Relatório LOSS';
+            btnLoss.style.cssText = 'padding: 10px; border: none; border-radius: 5px; background: #dc3545; color: white; font-weight: bold; cursor: pointer; font-size: 13px;';
             btnLoss.onclick = () => gerarRelatorio(true, btnLoss);
             painel.appendChild(btnLoss);
         }
@@ -241,7 +235,18 @@
         document.body.appendChild(painel);
     }
 
-    // Aguarda o site carregar os dados
-    setTimeout(criarPainelUI, 1200);
+    // --- MOTOR DE MONITORAMENTO ---
+    // Checa a cada 1 segundo se a página tem dados de ONU e se o painel sumiu
+    setInterval(() => {
+        const temDados = document.body.innerText.includes('OLT') && document.body.innerText.includes('Serial');
+        const painelExiste = document.getElementById('ags-panel-v2');
+
+        if (temDados && !painelExiste) {
+            criarPainelUI();
+        } else if (!temDados && painelExiste) {
+            // Remove o painel se você sair da tela da ONU
+            painelExiste.remove();
+        }
+    }, 1000);
 
 })();
