@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Copiar Dados ONU - JoaoAGS
 // @namespace    http://tampermonkey.net/
-// @version      2.1
+// @version      2.2
 // @description  Copia os dados da ONU, e faz teste de ONU LOSS (Busca de Tabela Aprimorada)
 // @author       Joao Augusto
 // @icon         https://avatars.githubusercontent.com/u/179055349?v=4
@@ -173,7 +173,7 @@
             else modelo = 'N/A';
         }
 
-        criarBotao('btn-copiar-onu', '📋 Copiar Dados', 'success', (btn) => {
+        criarBotao('btn-copiar-onu', '📋 Copiar Dados ONU', 'success', (btn) => {
             const linhas = [
                 '[DADOS DA ONU]',
                 `Local: ${localCTO}`,
